@@ -1,31 +1,34 @@
 import requests
-from bs4 import BeautifulSoup
+import re
 import os
 
-# 텔레그램 설정 (GitHub Secrets에서 가져옴)
+# 텔레그램 설정
 TOKEN = os.environ.get('BOT_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-def get_price(code):
-    url = f"https://finance.naver.com/marketindex/goldDetail.naver?goldCode={code}"
+def get_gold_price(code):
+    # 모바일 페이지보다 안정적인 API 데이터를 직접 찌릅니다.
+    url = f"https://polling.finance.naver.com/api/realtime/world/index/{code}"
     headers = {'User-Agent': 'Mozilla/5.0'}
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, 'html.parser')
     
-    # 현재가 추출 (네이버 PC 버전 기준이 가장 안정적입니다)
-    price_text = soup.select_one("p.no_today em.no_up span.blind")
-    if not price_text:
-        price_text = soup.select_one("p.no_today em.no_down span.blind")
-    if not price_text:
-        price_text = soup.select_one("p.no_today em span.blind")
-        
-    return float(price_text.text.replace(",", ""))
+    try:
+        res = requests.get(url, headers=headers)
+        data = res.json()
+        # 네이버 API 구조에서 가격 추출
+        price = data['result']['areas'][0]['datas'][0]['nm']
+        # 가격이 숫자가 아닌 텍스트로 올 수 있어 숫자로 변환
+        return float(data['result']['areas'][0]['datas'][0]['nv'])
+    except Exception as e:
+        print(f"❌ {code} 가격 가져오기 실패: {e}")
+        return None
 
 def send_message():
-    try:
-        krx_price = get_price("M04020000") # 한국거래소 금
-        shinhan_price = get_price("CMDT_GD") # 신한은행 금
-        
+    print("🚀 작업을 시작합니다...")
+    
+    krx_price = get_gold_price("M04020000") # KRX 금
+    shinhan_price = get_gold_price("CMDT_GD") # 신한은행(국제금)
+    
+    if krx_price and shinhan_price:
         spread = krx_price - shinhan_price
         disparity = (spread / shinhan_price) * 100
         
@@ -41,12 +44,16 @@ def send_message():
             f"📊 상태: {status}"
         )
         
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={CHAT_ID}&text={msg}"
-        requests.get(url)
-        print("메시지 전송 완료!")
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        params = {'chat_id': CHAT_ID, 'text': msg}
+        res = requests.post(url, params=params)
         
-    except Exception as e:
-        print(f"오류 발생: {e}")
+        if res.status_code == 200:
+            print("✅ 메시지 전송 성공!")
+        else:
+            print(f"❌ 텔레그램 전송 실패: {res.text}")
+    else:
+        print("❌ 가격 데이터를 불러오지 못해 메시지를 보내지 않았습니다.")
 
 if __name__ == "__main__":
     send_message()
