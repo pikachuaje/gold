@@ -1,13 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import re
 
 # 텔레그램 설정
 TOKEN = os.environ.get('BOT_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
 def get_price(code):
-    # 상혁님이 보시는 바로 그 모바일 페이지 주소입니다.
     url = f"https://m.stock.naver.com/marketindex/metals/{code}"
     headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1'}
     
@@ -15,12 +15,14 @@ def get_price(code):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 화면에 크게 떠 있는 가격 숫자를 찾는 로직입니다.
-        # 네이버 모바일 증권의 가격 클래스명을 타겟팅합니다.
+        # 가격이 적힌 태그를 찾습니다.
         price_tag = soup.find("strong", class_=lambda x: x and 'price' in x.lower())
         
         if price_tag:
-            price_text = price_tag.text.replace(",", "")
+            raw_text = price_tag.text
+            # 정규표현식을 사용해 숫자와 소수점(.)만 남기고 모두 제거합니다.
+            # '208,800원/g' -> '208800' / '201,436.05원/g' -> '201436.05'
+            price_text = re.sub(r'[^0-9.]', '', raw_text)
             return float(price_text)
         else:
             print(f"❌ {code} 가격 태그를 찾을 수 없습니다.")
@@ -30,7 +32,7 @@ def get_price(code):
         return None
 
 def send_message():
-    print("🚀 실시간 웹 크롤링을 시작합니다...")
+    print("🚀 글자를 제외하고 숫자만 골라내는 작업을 시작합니다...")
     
     krx_price = get_price("M04020000") # KRX 금
     shinhan_price = get_price("CMDT_GD") # 신한은행 금
@@ -60,7 +62,7 @@ def send_message():
         else:
             print(f"❌ 전송 실패 (상태 코드: {res.status_code})")
     else:
-        print("❌ 데이터를 다 채우지 못해 전송을 취소합니다.")
+        print("❌ 데이터를 처리할 수 없어 전송을 취소합니다.")
 
 if __name__ == "__main__":
     send_message()
