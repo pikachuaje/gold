@@ -1,32 +1,39 @@
 import requests
-import re
+from bs4 import BeautifulSoup
 import os
 
 # 텔레그램 설정
 TOKEN = os.environ.get('BOT_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-def get_gold_price(code):
-    # 모바일 페이지보다 안정적인 API 데이터를 직접 찌릅니다.
-    url = f"https://polling.finance.naver.com/api/realtime/world/index/{code}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+def get_price(code):
+    # 상혁님이 보시는 바로 그 모바일 페이지 주소입니다.
+    url = f"https://m.stock.naver.com/marketindex/metals/{code}"
+    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1'}
     
     try:
         res = requests.get(url, headers=headers)
-        data = res.json()
-        # 네이버 API 구조에서 가격 추출
-        price = data['result']['areas'][0]['datas'][0]['nm']
-        # 가격이 숫자가 아닌 텍스트로 올 수 있어 숫자로 변환
-        return float(data['result']['areas'][0]['datas'][0]['nv'])
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # 화면에 크게 떠 있는 가격 숫자를 찾는 로직입니다.
+        # 네이버 모바일 증권의 가격 클래스명을 타겟팅합니다.
+        price_tag = soup.find("strong", class_=lambda x: x and 'price' in x.lower())
+        
+        if price_tag:
+            price_text = price_tag.text.replace(",", "")
+            return float(price_text)
+        else:
+            print(f"❌ {code} 가격 태그를 찾을 수 없습니다.")
+            return None
     except Exception as e:
-        print(f"❌ {code} 가격 가져오기 실패: {e}")
+        print(f"❌ {code} 가져오기 중 오류: {e}")
         return None
 
 def send_message():
-    print("🚀 작업을 시작합니다...")
+    print("🚀 실시간 웹 크롤링을 시작합니다...")
     
-    krx_price = get_gold_price("M04020000") # KRX 금
-    shinhan_price = get_gold_price("CMDT_GD") # 신한은행(국제금)
+    krx_price = get_price("M04020000") # KRX 금
+    shinhan_price = get_price("CMDT_GD") # 신한은행 금
     
     if krx_price and shinhan_price:
         spread = krx_price - shinhan_price
@@ -49,11 +56,11 @@ def send_message():
         res = requests.post(url, params=params)
         
         if res.status_code == 200:
-            print("✅ 메시지 전송 성공!")
+            print("✅ 텔레그램 메시지 전송 성공!")
         else:
-            print(f"❌ 텔레그램 전송 실패: {res.text}")
+            print(f"❌ 전송 실패 (상태 코드: {res.status_code})")
     else:
-        print("❌ 가격 데이터를 불러오지 못해 메시지를 보내지 않았습니다.")
+        print("❌ 데이터를 다 채우지 못해 전송을 취소합니다.")
 
 if __name__ == "__main__":
     send_message()
